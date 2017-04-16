@@ -24,3 +24,6 @@ gen_tcp:send(Socket, "Hey there first shell!").
 
 %%PC1:
 flush().
+
+
+%%%%%%% CABECERA %%%% 
