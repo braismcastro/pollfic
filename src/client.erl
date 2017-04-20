@@ -5,7 +5,7 @@
 %     Modela la funcionalidad a la que tiene acceso un nodo cliente normal.
 -module(client).
 
--export([init/0, find_polls/3,poll_details/1,vote/2,new_poll/2,close_poll/1]).
+-export([init/0, find_polls/2,poll_details/1,vote/2,new_poll/2,close_poll/1]).
 
 -define(LOCAL_POLL_SERVER,local_poll_server).
 
@@ -23,22 +23,23 @@ init() -> case  dicc:polls_alive()  of
 % Params:
 %   - IP:           Dirección IP del nodo discover al que se envía la petición.
 %   - DiscoverPort: Puerto al que se envía la petición.
-%   - Msg:          Mensaje que se envía.
 % Returns:
 %   - Lista de encuestas activas registradas.
 %   - no_answer_from_server: Si el discover no responde.
-find_polls(IP, DiscoverPort, Msg) ->
+find_polls(IP, DiscoverPort) ->
     {ok, Socket} = gen_udp:open(0, [binary]),
     io:format("Client opened socket=~p~n",[Socket]),
-    util:send(Socket, IP, DiscoverPort, Msg),
+    util:send(Socket, IP, DiscoverPort, erlang:term_to_binary(poll_request)),
     Value = receive
                 {udp, Socket, _, _, Bin} ->
-                    io:format("Client received:~p~n",[Bin])
+                    io:format("Client received:~p~n",[erlang:binary_to_term(Bin)])
             after 10000 ->
                     no_answer_from_server
             end,
     gen_udp:close(Socket),
     Value.
+
+
 
 % Crea una nueva encuesta que sera hosteada por la propia máquina, y añade su
 % fichero al directorio de encuestas acitvas. Si el proceso "Poll Server" no

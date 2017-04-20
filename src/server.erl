@@ -12,7 +12,8 @@
 
 -export([init_poll_server/0]).
 % HAY QUE MIRAR COMO IDENTIFICAMOS AL NODO DISCOVER
--define(DISCOVER,{0,0,0,0}).
+-define(DISCOVER,{127,0,0,1}).
+-define(PORT,9090).
 
 
 
@@ -51,9 +52,12 @@ poll_server_loop(Socket) ->
                     util:send(Socket, From, FromPort, erlang:term_to_binary(PollInfo))
             end;
         {new_poll,From,PollName,Description} ->
-            % FALTA: Comprobar el poll name está disponible en discover.
-            start_poll(PollName,Description),
-            From ! ok;
+            case register_in_node(Socket,?DISCOVER,?PORT,PollName) of
+                registered ->   start_poll(PollName,Description),
+                                From ! ok;
+                name_not_avaliable -> From ! name_not_avaliable;
+                no_answer_from_server -> From ! no_answer_from_server
+            end;
         {close_poll,From,PollName} ->
             % FALTA: Enviar la petición de borrado al discover.
             From ! {close, dicc:close(PollName)}
@@ -65,6 +69,24 @@ check_polls(true,Socket) -> poll_server_loop(Socket);
 check_polls(false,_) -> exit(normal).
 
 
+
+% Pide al nodo Discover la lista de encuestas activas registradas.
+% Params:
+%   - IP:           Dirección IP del nodo discover al que se envía la petición.
+%   - DiscoverPort: Puerto al que se envía la petición.
+%   - Msg:          Mensaje que se envía.
+% Returns:
+%   - Lista de encuestas activas registradas.
+%   - no_answer_from_server: Si el discover no responde.
+register_in_node(Socket, IP, DiscoverPort, PollName) ->
+    util:send(Socket, IP, DiscoverPort, erlang:term_to_binary({register,PollName})),
+    Value = receive
+                {udp, Socket, _, _, Bin} ->
+                    erlang:binary_to_term(Bin)
+            after 10000 ->
+                    no_answer_from_server
+            end,
+    Value.
 
 %%%%%%%%%%%%%%%%%% CASOS DE USO %%%%%%%%%%%%%%%%%
 
@@ -115,3 +137,4 @@ vote(Who, PollName, Option) ->
             {ok, voted};
         _ -> {error, alredy_voted}
     end.    
+

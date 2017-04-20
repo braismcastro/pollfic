@@ -10,7 +10,7 @@
 -module(util).
  
 %% Public API
--export([open/2, close/1, send/4]).
+-export([open/2, close/1, send/4, term_to_str/1, str_to_term/1]).
 
  
 %%--------------------------------------------------------------------
