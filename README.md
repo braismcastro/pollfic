@@ -1,4 +1,4 @@
-# Pollfic: Aplicación de organización de encuestas escrita en erlang
+# Pollfic: Aplicación de organización de encuestas hecha en erlang
 
 En Pollfic los usuarios pueden:
 
@@ -9,6 +9,10 @@ En Pollfic los usuarios pueden:
 ## Vista física de la app
 
 ![Vista fisica](https://raw.github.com/braismcastro/pollfic/master/Doc/Pollfic%20architecture_%20physical%20view.png)
+
+## Vista de desarrollo
+
+![Vista de desarrollo](https://raw.github.com/braismcastro/pollfic/master/Doc/pollfic_project_files_structure.png)
 
 ## Configuración de la aplicación
 
@@ -46,7 +50,7 @@ erlc -o `dirname $0`/bin/ `dirname $0`/src/server.erl `dirname $0`/src/discover.
 
 ```
 {
-	"shell_cmd" : "~/pollfic/buid.sh"
+	"shell_cmd" : "~/pollfic/build.sh"
 }
 ```
 
@@ -58,5 +62,5 @@ Tarea | Equipo | Progreso
 :------------ | :-------------: | :---:
 Funcionalidad básica | Todos los miembros | 100%
 Autenticación y cifrado | David y Brais | 0%
-Replicación y calanceo de carga | Alex y Dani | 0%
-Filtro del balanceador | Paloma y Manu | 0%
+Replicación y calanceo de carga | Paloma y Manu | 0%
+Filtro del balanceador | Alex y Dani | 0%
