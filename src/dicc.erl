@@ -11,14 +11,21 @@
 % encuesta/nombre del fichero
 % Reciben y emiten expresiones de erlang
 -module(dicc).
--export([add/3, update/3, get/2, close/1, polls_alive/0]).
+-export([add/3, update/3, get/2, close/1, get_file_list/0, get_conf/1]).
 -define(GPATH,"./polls/").
 -define(OPATH, "./oldpolls/").
+-define(CONF, "../config").
 
 % Devuelve la tupla {Key, Value} para una clave y un fichero que le mandes
 get(FileName, Key) ->
     {ok, File} = file:open(?GPATH++FileName, [read]),
     Value = get_aux(File, Key),
+    file:close(File),
+    Value.
+
+get_conf(Param) -> 
+    {ok, File} = file:open(?CONF, [read]),
+    {_, Value} = get_aux(File, Param),
     file:close(File),
     Value.
 
@@ -59,18 +66,15 @@ add(FileName, Key, Value) ->
     file:close(File).
 
 % Mueve un fichero del directorio de encuestas activas "polls/" al de inactivas
-% "oldpolls/".
+% "oldpolls/"
 close(FileName) -> 
     file:copy(?GPATH++FileName, ?OPATH++FileName),
     file:delete(?GPATH++FileName),
     {deleted, FileName}.
 
 % Devuelve true si hay encuestas activas y false en caso contrario.
-polls_alive() -> 
-    {ok, List} = file:list_dir_all(?GPATH),
-    is_empty(List).
-is_empty([]) -> false;
-is_empty(_) -> true.
+get_file_list() -> 
+    file:list_dir_all(?GPATH).
 
 % Función auxiliar para sobreescribir una numero de caracteres a blancos
 override(_, 1) -> ok;

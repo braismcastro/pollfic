@@ -5,14 +5,14 @@
 %     Modela la funcionalidad a la que tiene acceso un nodo cliente normal.
 -module(client).
 
--export([init/0, find_polls/2,poll_details/1,vote/2,new_poll/2,close_poll/1]).
+-export([init/0, find_polls/0,poll_details/1,vote/2,new_poll/2,close_poll/1]).
 
 -define(LOCAL_POLL_SERVER,local_poll_server).
 
 
 % Debe ejecutarse al inicio siempre. Si hay encuestas activas arranca el
 % "Poll Server".
-init() -> case  dicc:polls_alive()  of
+init() -> case  server:are_polls_alive()  of
                 true-> 
                         register(?LOCAL_POLL_SERVER,
                             spawn(server,init_poll_server,[]));
@@ -26,7 +26,9 @@ init() -> case  dicc:polls_alive()  of
 % Returns:
 %   - Lista de encuestas activas registradas.
 %   - no_answer_from_server: Si el discover no responde.
-find_polls(IP, DiscoverPort) ->
+find_polls() ->
+    IP = dicc:get_conf(discover_dir),
+    DiscoverPort = dicc:get_conf(discover_port),
     {ok, Socket} = gen_udp:open(0, [binary]),
     io:format("Client opened socket=~p~n",[Socket]),
     util:send(Socket, IP, DiscoverPort, erlang:term_to_binary(poll_request)),

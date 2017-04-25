@@ -10,19 +10,18 @@
 %           servicio.
 -module(server).
 
--export([init_poll_server/0]).
-% HAY QUE MIRAR COMO IDENTIFICAMOS AL NODO DISCOVER
--define(DISCOVER,{127,0,0,1}).
--define(PORT,9090).
-
-
+-export([init_poll_server/0, are_polls_alive/0]).
 
 %%%%%%%%%%%%%% ACCESO AL SERVICIO %%%%%%%%%%%%%%%
 
-% Abre el socket y entra en el bucle.
+% Abre el socket, carga la configuración y entra en el bucle.
 init_poll_server() ->
-    {ok,Socket} = gen_udp:open(0, [binary,{active,true}]),
-    poll_server_loop(Socket).
+    {ok,Socket}  = gen_udp:open(0, [binary,{active,true}]),
+    DiscoverDir  = dicc:get_conf(discover_dir),
+    DiscoverPort = dicc:get_conf(discover_port),
+    update_polls_port(Socket,DiscoverDir,DiscoverPort),  % Comprobar que ha funcionado o si no volver a intentarlo en bucle
+    poll_server_loop(Socket,DiscoverDir,DiscoverPort).
+
 
 % Se queda a la escucha de los mensajes que el servidor pueda recibir (locales
 % y remotos) y los procesa. Si no hay encuestas activas el servidor aborta la
@@ -39,7 +38,7 @@ init_poll_server() ->
 %   - new_poll:   Crea una nueva encuesta para hosterarla y la registra en 
 %                 Discover.
 %   - close_poll: Cierra una encuesta activa y la borra en Discover.
-poll_server_loop(Socket) ->
+poll_server_loop(Socket, DiscoverDir, DiscoverPort) ->
     inet:setopts(Socket, [{active,once}]),
     receive
         {udp, Socket, From, FromPort, Msg} ->
@@ -52,43 +51,90 @@ poll_server_loop(Socket) ->
                     util:send(Socket, From, FromPort, erlang:term_to_binary(PollInfo))
             end;
         {new_poll,From,PollName,Description} ->
-            case register_in_node(Socket,?DISCOVER,?PORT,PollName) of
-                registered ->   start_poll(PollName,Description),
-                                From ! ok;
-                name_not_avaliable -> From ! name_not_avaliable;
-                no_answer_from_server -> From ! no_answer_from_server
-            end;
+            From ! register_in_node(Socket, DiscoverDir, DiscoverPort, PollName, Description);
         {close_poll,From,PollName} ->
-            % FALTA: Enviar la petición de borrado al discover.
-            From ! {close, dicc:close(PollName)}
+            % FALTA: BUCLE COMPROBANDO QUE EL DISCOVER LO HA BORRADO.
+            util:send(Socket,  DiscoverDir, DiscoverPort, erlang:term_to_binary({delete, PollName})), 
+            From ! {close, close_poll(PollName)},
+            check_polls(are_polls_alive(), Socket, DiscoverDir, DiscoverPort)
     end,
-    check_polls(dicc:polls_alive(),Socket).
-
+    poll_server_loop(Socket, DiscoverDir, DiscoverPort).
     
-check_polls(true,Socket) -> poll_server_loop(Socket);
-check_polls(false,_) -> exit(normal).
+check_polls(true, Socket, DiscoverDir, DiscoverPort) -> 
+    poll_server_loop(Socket, DiscoverDir, DiscoverPort);
+check_polls(false, _, _, _) -> 
+    exit(normal).
 
 
-
-% Pide al nodo Discover la lista de encuestas activas registradas.
+% Actualiza el puerto que tiene el servidor de discover cuando el servidor
+% se reconecta.
 % Params:
-%   - IP:           Dirección IP del nodo discover al que se envía la petición.
-%   - DiscoverPort: Puerto al que se envía la petición.
-%   - Msg:          Mensaje que se envía.
+%   - Socket:       Socket que se usará para envíar el mensaje de actualización
+%   - DiscoverDir:  Tupla que representa la IP de Discover.
+%   - DiscoverPort: Puerto en el que escucha Discover.
 % Returns:
-%   - Lista de encuestas activas registradas.
-%   - no_answer_from_server: Si el discover no responde.
-register_in_node(Socket, IP, DiscoverPort, PollName) ->
-    util:send(Socket, IP, DiscoverPort, erlang:term_to_binary({register,PollName})),
-    Value = receive
-                {udp, Socket, _, _, Bin} ->
-                    erlang:binary_to_term(Bin)
-            after 10000 ->
-                    no_answer_from_server
-            end,
-    Value.
+%   - port_changed: El puerto se ha actualizado en Discover correctamente.
+%   - no_answer_from_server: Tras 10mil ms sin respuesta del servidor.
+update_polls_port(Socket, DiscoverDir, DiscoverPort) ->
+    util:send(Socket, DiscoverDir, DiscoverPort, erlang:term_to_binary({renew})),
+    receive
+        {udp, Socket, _, _, Bin} ->
+            erlang:binary_to_term(Bin)
+    after 10000 ->
+            no_answer_from_server
+    end.
+
+
+% Registra una encuesta en el nodo descubrimiento.
+% Params:
+%   - Socket:                Socket que se usará para enviar el mensaje a Discover.
+%   - DiscoverDir:           Tupla que representa la IP de Discover.
+%   - DiscoverPort:          Puerto en el que escucha Discover.
+%   - PollName:              Nombre de la encuesta que se registra.
+% Returns:
+%   - registered:            Encuesta registrada en el nodo discover.
+%   - name_not_aviable:      Nombre de la encuesta ya utilizado.
+%   - no_answer_from_server: Tras 10mil ms sin respuesta del servidor.
+register_in_node(Socket, DiscoverDir, DiscoverPort, PollName, Description) ->
+    util:send(Socket, DiscoverDir, DiscoverPort, erlang:term_to_binary({register,PollName})),
+    receive
+        {udp, Socket, _, _, Bin} ->
+            case erlang:binary_to_term(Bin) of
+                registered -> 
+                    start_poll(PollName,Description),
+                    registered;
+                Response -> 
+                    Response
+            end
+    after 10000 ->
+            no_answer_from_server
+    end.
 
 %%%%%%%%%%%%%%%%%% CASOS DE USO %%%%%%%%%%%%%%%%%
+
+
+% Cierra una encuesta activa que coincida con el nombre 'PollName'. Las 
+% encuestas cerradas se envían al directorio de encuestas cerradas.
+% Params:
+%   - PollName: Nombre de la encuesta que se va a cerrar.
+% Returns:
+%   {deleted, FileName}: Se ha cerrado satisfactoriamente la encuesta.
+%   {error, not_found}:  Cuando no encuentra el archivo de la encuesta.
+close_poll(PollName) -> 
+    dicc:close(PollName).
+    
+    
+% Comprueba si hay alguna encuesta activa.
+% Returns:
+%   - true: Cuando hay al menos una encuesta activa.
+%   - false: Cuando no hay ninguna encuesta activa.
+are_polls_alive() -> 
+        {ok, List} = dicc:get_file_list(),
+        is_empty(List).
+
+is_empty([]) -> false;
+is_empty(_) -> true.
+
 
 % Crea una encuesta. Genera un fichero de encuesta en el directorio de
 % encuestas activas y lo inicializa.
@@ -101,6 +147,7 @@ start_poll(PollName, Description) ->
         dicc:add(PollName, poll_inf, {PollName, Description}),
         dicc:add(PollName, positive, 0),
         dicc:add(PollName, negative, 0).
+      
         
 % Devuelve la informacion de una encuesta.
 % Params
@@ -118,6 +165,7 @@ info_poll(PollName) ->
         {dicc:get(PollName, poll_inf), 
         dicc:get(PollName, positive), 
         dicc:get(PollName, negative)}.
+
 
 % Añade un voto a la opción de la encuesta que se indique por parámetro.
 % Además registra que "Who" ya ha votado en esta encuesta.
@@ -137,4 +185,3 @@ vote(Who, PollName, Option) ->
             {ok, voted};
         _ -> {error, alredy_voted}
     end.    
-
