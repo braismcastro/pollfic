@@ -45,7 +45,27 @@ loop(Socket,L) ->
 		            							  loop(Socket, [{IP,Port,PollName}|L]);
 		            						_ ->  util:send(Socket, IP, Port, erlang:term_to_binary(name_not_avaliable)),
 		            							  loop(Socket, L)
-		            					  end
+		            					  end;
+
+		        {delete, PollName} -> case check_poll_name(L,PollName) of 
+		        						false -> 
+		        							{PollIP,PollPort,PollName} = lists:keyfind(PollName,3,L),
+		        							if IP == PollIP ->
+		        									util:send(Socket, IP, Port, erlang:term_to_binary(deleted)),
+		        									loop(Socket,lists:delete({PollIP,PollPort,PollName},L));
+		        								true -> 
+		        									util:send(Socket, IP, Port, erlang:term_to_binary(owner_error)),
+		            							  	loop(Socket, L)
+		            						end;
+		            					_ ->
+		            						util:send(Socket, IP, Port, erlang:term_to_binary(non_existing_name)),
+		            						loop(Socket, L)
+		            				  end;
+
+		        {renew} ->  NewL = update(L, IP, Port, []),
+		        			util:send(Socket, IP, Port, erlang:term_to_binary(port_changed)),
+		        			loop(Socket, NewL)
+
             end
     end.
 
@@ -56,3 +76,13 @@ check_poll_name([{_,_,PollName}|_], PollName) -> false;
 
 check_poll_name([_|T], PollName) -> 
 	check_poll_name(T, PollName).
+
+
+update([], _, _, Acc) -> Acc;
+
+update([{IP,_,PollName}|T], IP, Port, Acc) -> 
+	update(T, IP, Port, [{IP,Port,PollName}|Acc]);
+
+update([_|T], IP, Port, Acc) ->
+	update(T, IP, Port, Acc).
+
