@@ -83,6 +83,6 @@ update([], _, _, Acc) -> Acc;
 update([{IP,_,PollName}|T], IP, Port, Acc) -> 
 	update(T, IP, Port, [{IP,Port,PollName}|Acc]);
 
-update([_|T], IP, Port, Acc) ->
-	update(T, IP, Port, Acc).
+update([H|T], IP, Port, Acc) ->
+	update(T, IP, Port, [H|Acc]).
 

@@ -1,0 +1,2 @@
+cd ./bin
+erl -smp -noshell -s gui start -s init stop

@@ -48,17 +48,19 @@ poll_server_loop(Socket, DiscoverDir, DiscoverPort) ->
                     util:send(Socket, From, FromPort, erlang:term_to_binary(VoteResult));
                 {poll_info, PollName} -> 
                     PollInfo = info_poll(PollName),
-                    util:send(Socket, From, FromPort, erlang:term_to_binary(PollInfo))
+                    util:send(Socket, From, FromPort, erlang:term_to_binary(PollInfo));
+                Msg -> io:format("Recibido: ~p", [Msg])
             end;
         {new_poll,From,PollName,Description} ->
             From ! register_in_node(Socket, DiscoverDir, DiscoverPort, PollName, Description);
         {close_poll,From,PollName} ->
             % FALTA: BUCLE COMPROBANDO QUE EL DISCOVER LO HA BORRADO.
             util:send(Socket,  DiscoverDir, DiscoverPort, erlang:term_to_binary({delete, PollName})), 
-            From ! {close, close_poll(PollName)},
-            check_polls(are_polls_alive(), Socket, DiscoverDir, DiscoverPort)
+            From ! {close, close_poll(PollName)}
+            
     end,
-    poll_server_loop(Socket, DiscoverDir, DiscoverPort).
+    %poll_server_loop(Socket, DiscoverDir, DiscoverPort).
+    check_polls(are_polls_alive(), Socket, DiscoverDir, DiscoverPort).
     
 check_polls(true, Socket, DiscoverDir, DiscoverPort) -> 
     poll_server_loop(Socket, DiscoverDir, DiscoverPort);

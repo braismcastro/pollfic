@@ -34,7 +34,7 @@ find_polls() ->
     util:send(Socket, IP, DiscoverPort, erlang:term_to_binary(poll_request)),
     Value = receive
                 {udp, Socket, _, _, Bin} ->
-                    io:format("Client received:~p~n",[erlang:binary_to_term(Bin)])
+                    erlang:binary_to_term(Bin)
             after 10000 ->
                     no_answer_from_server
             end,
