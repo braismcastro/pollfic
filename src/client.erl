@@ -9,6 +9,8 @@
 
 -define(LOCAL_POLL_SERVER,local_poll_server).
 -define(KEYPATH,"../keys/").
+-define(BALANCER_DIR,balancer_dir).
+-define(BALANCER_PORT,balancer_port).
 
 
 % Debe ejecutarse al inicio siempre. Si hay encuestas activas arranca el
@@ -28,14 +30,18 @@ init() -> case  server:are_polls_alive()  of
 %   - Lista de encuestas activas registradas.
 %   - no_answer_from_server: Si el discover no responde.
 find_polls() ->
-    IP = dicc:get_conf(discover_dir),
-    DiscoverPort = dicc:get_conf(discover_port),
+    BalancerIP = dicc:get_conf(?BALANCER_DIR),
+    BalancerPort = dicc:get_conf(?BALANCER_PORT),
     {ok, Socket} = gen_udp:open(0, [binary]),
     io:format("Client opened socket=~p~n",[Socket]),
-    util:send(Socket, IP, DiscoverPort, erlang:term_to_binary(poll_request)),
+    util:send(Socket, BalancerIP, BalancerPort, erlang:term_to_binary(poll_request)),
+    {DiscoverIP,DiscoverPort} = receive
+                                    {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
+                                        binary_to_term(DiscInf)
+                                end, 
     Value = receive
-                {udp, Socket, _, _, Bin} ->
-                    erlang:binary_to_term(Bin)
+                {udp, Socket, DiscoverIP, DiscoverPort, BinValue} ->
+                    erlang:binary_to_term(BinValue)
             after 2000 ->
                     no_answer_from_server
             end,
@@ -118,9 +124,13 @@ vote({PollDir,PollPort,PollName},Option)
     
     
 get_server_pubkey(Socket,PollName) ->
-    IP = dicc:get_conf(discover_dir),
-    DiscoverPort = dicc:get_conf(discover_port),
-    util:send(Socket,IP,DiscoverPort,erlang:term_to_binary({public_key,PollName})),
+    BalancerIP = dicc:get_conf(?BALANCER_DIR),
+    BalancerPort = dicc:get_conf(?BALANCER_PORT),
+    util:send(Socket,BalancerIP,BalancerPort,erlang:term_to_binary({public_key,PollName})),
+    {_DiscoverIP,_DiscoverPort} = receive
+                                {udp, Socket, BalancerIP, BalancerPort, Bin} ->
+                                    binary_to_term(Bin)
+                                end, 
     util:receive_file(PollName ++ "_poll.pub",Socket).
     
 % Permite al cliente cerrar una encuesta activa.
@@ -135,6 +145,6 @@ close_poll(PollName) ->
         _ ->
             ?LOCAL_POLL_SERVER ! {close_poll, self(), PollName},
             receive
-                {close,Result} -> Result
+                Msg -> Msg
             end
     end.

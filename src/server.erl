@@ -65,7 +65,7 @@ poll_server_loop(Socket, DiscoverDir, DiscoverPort) ->
         {close_poll,From,PollName} ->
             % FALTA: BUCLE COMPROBANDO QUE EL DISCOVER LO HA BORRADO.
             util:send(Socket,  DiscoverDir, DiscoverPort, erlang:term_to_binary({delete, PollName})), 
-            From ! {close, close_poll(PollName)},
+            From ! close_poll(Socket,PollName),
             check_polls(are_polls_alive(), Socket, DiscoverDir, DiscoverPort)
             
     end,
@@ -107,12 +107,16 @@ update_polls_port(Socket, DiscoverDir, DiscoverPort) ->
 %   - registered:            Encuesta registrada en el nodo discover.
 %   - name_not_aviable:      Nombre de la encuesta ya utilizado.
 %   - no_answer_from_server: Tras 10mil ms sin respuesta del servidor.
-register_in_node(Socket, DiscoverDir, DiscoverPort, PollName, Description) ->
-    util:send(Socket, DiscoverDir, DiscoverPort, erlang:term_to_binary({register,PollName})),
-    util:send_file(DiscoverDir, DiscoverPort, ?PUBLIC_KEY_PATH),
+register_in_node(Socket, BalancerIP, BalancerPort, PollName, Description) ->
+    util:send(Socket, BalancerIP, BalancerPort, erlang:term_to_binary({register,PollName})),
+    {DiscoverIP,DiscoverPort} = receive
+                            {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
+                                binary_to_term(DiscInf)
+                        end, 
+    util:send_file(DiscoverIP, DiscoverPort, ?PUBLIC_KEY_PATH),
     receive
-        {udp, Socket, _, _, Bin} ->
-            case erlang:binary_to_term(Bin) of
+        {udp, Socket, DiscoverIP, DiscoverPort, Result} ->
+            case erlang:binary_to_term(Result) of
                 {ok,registered} ->
                     start_poll(PollName,Description),
                     registered;
@@ -133,8 +137,25 @@ register_in_node(Socket, DiscoverDir, DiscoverPort, PollName, Description) ->
 % Returns:
 %   {deleted, FileName}: Se ha cerrado satisfactoriamente la encuesta.
 %   {error, not_found}:  Cuando no encuentra el archivo de la encuesta.
-close_poll(PollName) -> 
-    dicc:close(PollName).
+close_poll(Socket, PollName) -> 
+    BalancerIP = dicc:get_conf(balancer_dit),
+    BalancerPort = dicc:get_conf(balancer_port),
+    util:send(Socket, BalancerIP, BalancerPort, erlang:term_to_binary({delete,PollName})),
+    {DiscoverIP,DiscoverPort} = receive
+                                {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
+                                    binary_to_term(DiscInf)     
+                            end, 
+    receive 
+        {udp, Socket, DiscoverIP, DiscoverPort, Result} ->
+            Result = erlang:binary_to_term(Result),
+            case Result of
+                deleted -> dicc:close(PollName);
+                _ELSE -> true
+            end,
+            Result
+    end.
+
+
     
     
 % Comprueba si hay alguna encuesta activa.
