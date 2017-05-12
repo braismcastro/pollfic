@@ -1,19 +1,18 @@
 -module(gui).
 -include("../include/wx.hrl").
 -export([start/0, init/0]).
-%erl -smp -noshell -s gui start -s init stop
 
+-define(menuClose, 400).
 init() ->
 	spawn(?MODULE, start, []).
 
+
 start() -> 
 	register(master, self()),
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %	%	%	%	%	%	INICIALIZACIÓN DEL FRAME	%	%	%	%	%	
 	Wx=wx:new(),
-	F=wxFrame:new(Wx, ?wxID_ANY, "PollFic", [{size, {760, 400}}]),
-	wxFrame:show(F),
+	F=wxFrame:new(Wx, ?wxID_ANY, "PollFic", [{size, {840, 450}}]),
 
 	wxFrame:createStatusBar(F),
 	wxFrame:setStatusText(F, "...."), 
@@ -21,15 +20,40 @@ start() ->
 	wxFrame:setMenuBar (F, MenuBar),
 	OptMn = wxMenu:new(), 
 	wxMenuBar:append (MenuBar, OptMn, "&Options"), 
-
-	Quit = wxMenuItem:new ([{id,400},{text, "&Quit"}]), 
+	InitPolls = wxMenuItem:new ([{id, ?wxID_OPEN},{text, "Init polls"}]),
+	wxMenu:append (OptMn, InitPolls),
+	NewPoll = wxMenuItem:new ([{id, ?wxID_NEW},{text, "&New poll"}]),
+	wxMenu:append (OptMn, NewPoll),
+	ClosePoll = wxMenuItem:new ([{id, ?wxID_REVERT},{text, "&Close poll"}]),
+	wxMenu:append (OptMn, ClosePoll),
+	Quit = wxMenuItem:new ([{id, ?wxID_CLOSE},{text, "&Quit"}]), 
 	wxMenu:append (OptMn, Quit),
 
 	HelpMn = wxMenu:new(),
 	wxMenuBar:append (MenuBar, HelpMn, "&Help"), 
-	About = wxMenuItem:new ([{id,500},{text,"About"}]),
+	About = wxMenuItem:new ([{id,?wxID_HELP},{text,"About"}]),
 	wxMenu:append (HelpMn, About),
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%	%	%	%	% INICIALIZACIÓN DEL FRAME NEW POLL	%	%	%	%	%	
+
+	F2=wxFrame:new(Wx, ?wxID_ANY, "Crear encuesta", [{size, {450, 230}}]),
+	Panel2 = wxPanel:new(F2, []),
+	PollNameLabel = wxStaticText:new(Panel2, 1, "Nombre de encuesta", []),
+	PollNameBox = wxTextCtrl:new(Panel2, ?wxID_ANY, [{size, {380,30}}]),
+	PollDescriptionLabel = wxStaticText:new(Panel2, 1, "Descripción detallada", []),
+	PollDescriptionBox = wxTextCtrl:new(Panel2, ?wxID_ANY, [{style, ?wxTE_WORDWRAP 
+			bor ?wxTE_MULTILINE}, {size, {350,100}}]),
+	CreateButton = wxButton:new(Panel2, ?wxID_ANY, [{label, "Crear!"}]),	
+	GlobalSizer = wxBoxSizer:new(?wxVERTICAL),
+	wxSizer:add(GlobalSizer, PollNameLabel, []),
+	wxSizer:add(GlobalSizer, PollNameBox, [{flag, ?wxEXPAND}]),
+	wxSizer:add(GlobalSizer, PollDescriptionLabel, []),
+	wxSizer:add(GlobalSizer, PollDescriptionBox, [{flag, ?wxEXPAND}]),	
+	wxSizer:add(GlobalSizer, CreateButton, []),
+	wxPanel:setSizer(Panel2, GlobalSizer),
+	wxSizer:fit( GlobalSizer, Panel2),	
+    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %	%	%	%	INICIALIZACIÓN DE LAS DOS SECCIONES 	%	%	%	
 
@@ -72,19 +96,23 @@ start() ->
     wxPanel:setSizer(Panel, MainDivider),
     wxSizer:fit(MainDivider, Panel),
 
-    %%%%%%%%%%%%HANDLERS%%%%%%%%%%%%%%%%%%%
-    %AL VOTAR A UNA ENCUESTA
-    VoteHandler = fun(_,_) ->
-    				wxFrame:setStatusText(F, "Votando..."), 
-					Index = wxRadioBox:getSelection(RadioBox),
-					Name = wxStaticText:getLabel(PollName),
-					ListIndex = wxListCtrl:findItem(List, 0, Name),
-					{Name, Ip, Port} = get_tuple(List, ListIndex),
-					client:vote({Ip, Port, Name}, checkvote(Index)),
-					wxFrame:setStatusText(F, "Votado!")
-				  end,
-	wxButton:connect(VoteButton, command_button_clicked, [{callback,VoteHandler }]),
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%HANDLERS%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+	%%AL PEDIR POLLS A DISCOVER
+    RefreshHandler = fun(_,_) ->
+	    		wxFrame:setStatusText(F, "Pidiendo encuestas al discover..."), 
+				L = client:find_polls(),
+				case L of 
+					no_answer_from_server -> openDialog(Wx, "Discover does not respond");
+					_ -> 
+						wxListCtrl:deleteAllItems(List),
+						insertList(L, List),
+						hide(VoteButton, PollName, PollDescription, RadioBox),
+						wxFrame:setStatusText(F, "Lista actualizada!")
+				end
+		    end,
+	wxButton:connect(RefreshButton, command_button_clicked, [{callback,RefreshHandler }]),
+   
 	%AL CLICKAR EN UN ELEMENTO DE LA LISTA
 	PollDetailsHandler = fun(#wx{obj = _ListCtrl, event = #wxList{itemIndex = Item}},_) ->
 		    	wxFrame:setStatusText(F, "Pidiendo información de la encuesta..."), 
@@ -92,7 +120,7 @@ start() ->
 		    	{Name, Ip, Port} = get_tuple(List, Item),
 				{{poll_inf,{Name,Descr}},{positive,N},{negative,M}} = client:poll_details({Ip, Port, Name}),
 				
-				DetailedDescr = io_lib:format("Descripción: \n ~p \n\n\n Votos positivos: ~p \n \n Votos negativos: ~p", [Descr, N, M]),				
+				DetailedDescr = io_lib:format("Descripción: \n ~s \n\n\n Votos positivos: ~p \n \n Votos negativos: ~p", [Descr, N, M]),				
 				wxStaticText:setLabel(PollName, Name),
     			wxTextCtrl:setValue(PollDescription, DetailedDescr),
     			show(VoteButton, PollName, PollDescription, RadioBox),
@@ -100,23 +128,61 @@ start() ->
 					end,
 	wxListCtrl:connect(List, command_list_item_selected, [{callback,PollDetailsHandler }]),
 
-	%%AL PEDIR POLLS A DISCOVER
-    RefreshHandler = fun(_,_) ->
-    		wxFrame:setStatusText(F, "Pidiendo encuestas al discover..."), 
-			L = client:find_polls(),
-			wxListCtrl:deleteAllItems(List),
-			insertList(L, List),
-			hide(VoteButton, PollName, PollDescription, RadioBox),
-			wxFrame:setStatusText(F, "Lista actualizada!")
-		    end,
-	wxButton:connect(RefreshButton, command_button_clicked, [{callback,RefreshHandler }]),
+    %AL VOTAR A UNA ENCUESTA
+    VoteHandler = fun(_,_) ->
+    				wxFrame:setStatusText(F, "Votando..."), 
+					Index = wxRadioBox:getSelection(RadioBox),
+					Name = wxStaticText:getLabel(PollName),
+					ListIndex = wxListCtrl:findItem(List, 0, Name),
+					{Name, Ip, Port} = get_tuple(List, ListIndex),
+					Result = client:vote({Ip, Port, Name}, checkvote(Index)),
+					wxFrame:setStatusText(F, "Votado!"),
+					openDialog(Wx, util:term_to_str(Result)),
+					hide(VoteButton, PollName, PollDescription, RadioBox)
+				  end,
+	wxButton:connect(VoteButton, command_button_clicked, [{callback,VoteHandler }]),
 
 	CloseHandler = fun (_,_) ->
 				master ! {stop, F}
 			end,
 	wxFrame:connect (F, close_window, [{callback, CloseHandler}] ),
-	
+	ClosePollHandler = fun () ->
+					Name = wxStaticText:getLabel(PollName),
+					client:close_poll(Name)
+			end,
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%MENU HANDLER%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	MenuHandler = fun(#wx{id = Id,
+		 event = #wxCommand{type = command_menu_selected}}, _) ->
+   			case Id of
+				?wxID_NEW -> wxFrame:show(F2);
+				?wxID_OPEN -> client:init();
+				?wxID_HELP ->
+	    				wx_misc:launchDefaultBrowser("http://github.com/braismcastro/pollfic#readme");
+	    		?wxID_CLOSE ->  CloseHandler(any, any);
+	    		?wxID_REVERT -> ClosePollHandler();
+				_ -> ignore
+    		end
+    end,
+    wxFrame:connect(F, command_menu_selected, [{callback, MenuHandler}]),
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%CREATE HANDLER%%%%%%%%%%%%%%%%%%
 
+	HideFrame = fun(_,_) ->
+					wxFrame:hide(F2)
+			end,
+	wxFrame:connect (F2, close_window, [{callback, HideFrame}] ),
+    CreateHandler = fun(_,_) ->
+    			Name = wxTextCtrl:getLineText(PollNameBox,0),
+    			Description = get_textCtrl(PollDescriptionBox),
+    			Result = client:new_poll(Name, Description),
+    			openDialog(Wx, util:term_to_str(Result)),
+    			HideFrame(any, any),
+    			wxTextCtrl:setValue(PollDescriptionBox, ""),
+    			wxTextCtrl:setValue(PollNameBox,""),
+    			RefreshHandler(any,any)
+		    end,
+	wxButton:connect(CreateButton, command_button_clicked, [{callback,CreateHandler }]),
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	wxFrame:show(F),
 	hide(VoteButton, PollName, PollDescription, RadioBox),
 	loop().
 
@@ -135,7 +201,35 @@ insertList([{Ip, Port, PollName}|T], List) ->
 	insert(List, PollName, Ip, Port),
 	insertList(T, List).
 
+
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%FUNCIONES AUXILIARES PARA SIMPLIFICAR LA API%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%openDialog2(Wx, Text) ->
+	%F=wxFrame:new(Wx, ?wxID_ANY, "Hey!", [ {size, {300,100}}]),
+	%Panel = wxPanel:new(F, []),
+	%Label = wxStaticText:new(Panel, 1, "Info:\n ", [{style, ?wxALIGN_CENTRE_HORIZONTAL}]),
+	%Label2 = wxStaticText:new(Panel, 1, Text, []),
+	%wxFrame:show(F),
+	%MainDivider = wxBoxSizer:new(?wxVERTICAL),
+	%wxSizer:add(MainDivider, Label, []),
+	%wxSizer:add(MainDivider, Label2, []),
+    %xPanel:setSizer(Panel, MainDivider),
+    %xSizer:fit(MainDivider, Panel).
+
+openDialog(Wx, Text) ->
+	D = wxMessageDialog:new(Wx, Text),
+	wxMessageDialog:showModal(D).
+
+get_textCtrl(Textctrl) ->
+	Lines = wxTextCtrl:getNumberOfLines(Textctrl),
+	buildText("", 0, Lines, Textctrl).
+
+buildText(Text, _, 0, _) -> Text;
+buildText(Text, Current, Lines, Textctrl) when Lines>0->
+	Temp = wxTextCtrl:getLineText(Textctrl, Current),
+	buildText(Text++"\n"++Temp, Current+1, Lines-1, Textctrl).
+
 
 hide(VoteButton, PollName, PollDescription, RadioBox) -> 
 	wxButton:hide(VoteButton),

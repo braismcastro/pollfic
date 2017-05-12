@@ -10,8 +10,8 @@
 -module(util).
  
 %% Public API
--export([open/2, close/1, send/4, term_to_str/1, str_to_term/1]).
-
+-export([open/2, close/1, send/4, term_to_str/1, str_to_term/1,send_file/3, save_file/2, receive_file/2 ]).
+-define(KEYFOLDER, "../keys/").
  
 %%--------------------------------------------------------------------
 %% @doc Function 'open'
@@ -62,4 +62,27 @@ str_to_term(Str) ->
 	{ok,AbsForm} = erl_parse:parse_exprs(Tokens),
 	{value,Value,_Bs} = erl_eval:exprs(AbsForm, erl_eval:new_bindings()),
 	Value.
+	
+% Envía el fichero ubicado en 'Filepath' a la máquina con 'Ip' al puerto 'Port'.
+% La máquina destino debe usar 'file_receiver_loop' para recibir el fichero.
+send_file(Ip, ReceivePort, FilePath)->
+    {ok, Socket} = gen_udp:open(0, [binary, {active, once}]),
+    {ok, FileBinary} = file:read_file(FilePath),
+    util:send(Socket,Ip,ReceivePort,FileBinary),
+    ok = gen_tcp:close(Socket).
 
+% Recibe un fichero a través del puerto 'ReceivePort' y lo guarda con nombre
+% 'Filename' en el directorio configurado
+receive_file(Filename, Socket) ->
+	inet:setopts(Socket, [{active,once}]),
+    receive
+    	{udp, Socket, _, _, Bin} ->
+    		save_file(Filename, Bin)
+    end.
+    
+% Guarda el contenido 'Bs' en un fichero de nombre Filename, en el directorio
+% configurado.
+save_file(Filename,Bs) ->
+    {ok, Fd} = file:open(?KEYFOLDER ++ Filename ++ ".pub", write),
+    file:write(Fd, Bs),
+    file:close(Fd).

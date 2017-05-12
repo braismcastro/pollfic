@@ -62,8 +62,12 @@ update_aux(File, Key, Value) ->
 % Añade al final del fichero el par {Key, Value}, si no existe el fichero, lo crea.
 add(FileName, Key, Value) ->
     {ok, File} = file:open(?GPATH++FileName, [append]),
-    file:write(File, util:term_to_str({Key,Value})++"\n"),
+    %file:write(File, util:term_to_str({Key, Value})++"\n"),
+    %io:fwrite(File, "{~p, ~p}.\n", [Key, Value]),
+    io:write(File, {Key, Value}), %Esta nueva version arregla el error de las descripiones largas
+    io:fwrite(File, ".~n", []),
     file:close(File).
+
 
 % Mueve un fichero del directorio de encuestas activas "polls/" al de inactivas
 % "oldpolls/"

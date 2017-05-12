@@ -12,6 +12,10 @@
 
 -export([init_poll_server/0, are_polls_alive/0]).
 
+-define(PUBLIC_KEY_PATH, "../keys/public_key.pem").
+-define(PRIVATE_KEY_PATH, "../keys/private_key.pem").
+-define(KEYPATH, "../keys/").
+
 %%%%%%%%%%%%%% ACCESO AL SERVICIO %%%%%%%%%%%%%%%
 
 % Abre el socket, carga la configuración y entra en el bucle.
@@ -43,28 +47,34 @@ poll_server_loop(Socket, DiscoverDir, DiscoverPort) ->
     receive
         {udp, Socket, From, FromPort, Msg} ->
             case erlang:binary_to_term(Msg) of
-                {vote, PollName, Option} ->
-                    VoteResult = vote(From,PollName,Option),
+                vote ->
+                    inet:setopts(Socket,[{active,once}]),
+                    receive
+                        {udp, Socket, From, FromPort, EncryptedVote} ->
+                           {vote, PollName, Option} = encrypt:decrypt_with_priv(EncryptedVote),    
+                           VoteResult = vote(From, PollName, Option)
+                    end,
                     util:send(Socket, From, FromPort, erlang:term_to_binary(VoteResult));
                 {poll_info, PollName} -> 
                     PollInfo = info_poll(PollName),
-                    util:send(Socket, From, FromPort, erlang:term_to_binary(PollInfo));
-                Msg -> io:format("Recibido: ~p", [Msg])
+                    util:send(Socket, From, FromPort, erlang:term_to_binary(PollInfo))
             end;
         {new_poll,From,PollName,Description} ->
             From ! register_in_node(Socket, DiscoverDir, DiscoverPort, PollName, Description);
+            
         {close_poll,From,PollName} ->
             % FALTA: BUCLE COMPROBANDO QUE EL DISCOVER LO HA BORRADO.
             util:send(Socket,  DiscoverDir, DiscoverPort, erlang:term_to_binary({delete, PollName})), 
-            From ! {close, close_poll(PollName)}
+            From ! {close, close_poll(PollName)},
+            check_polls(are_polls_alive(), Socket, DiscoverDir, DiscoverPort)
             
     end,
-    %poll_server_loop(Socket, DiscoverDir, DiscoverPort).
-    check_polls(are_polls_alive(), Socket, DiscoverDir, DiscoverPort).
+    poll_server_loop(Socket, DiscoverDir, DiscoverPort).
+    %check_polls(are_polls_alive(), Socket, DiscoverDir, DiscoverPort).
     
 check_polls(true, Socket, DiscoverDir, DiscoverPort) -> 
     poll_server_loop(Socket, DiscoverDir, DiscoverPort);
-check_polls(false, _, _, _) -> 
+check_polls(_, _, _, _) -> 
     exit(normal).
 
 
@@ -82,7 +92,7 @@ update_polls_port(Socket, DiscoverDir, DiscoverPort) ->
     receive
         {udp, Socket, _, _, Bin} ->
             erlang:binary_to_term(Bin)
-    after 10000 ->
+    after 2000 ->
             no_answer_from_server
     end.
 
@@ -99,17 +109,18 @@ update_polls_port(Socket, DiscoverDir, DiscoverPort) ->
 %   - no_answer_from_server: Tras 10mil ms sin respuesta del servidor.
 register_in_node(Socket, DiscoverDir, DiscoverPort, PollName, Description) ->
     util:send(Socket, DiscoverDir, DiscoverPort, erlang:term_to_binary({register,PollName})),
+    util:send_file(DiscoverDir, DiscoverPort, ?PUBLIC_KEY_PATH),
     receive
         {udp, Socket, _, _, Bin} ->
             case erlang:binary_to_term(Bin) of
-                registered -> 
+                {ok,registered} ->
                     start_poll(PollName,Description),
                     registered;
-                Response -> 
-                    Response
+                OtherResponse ->
+                    OtherResponse
             end
-    after 10000 ->
-            no_answer_from_server
+    after 2000 ->
+        no_answer_from_server
     end.
 
 %%%%%%%%%%%%%%%%%% CASOS DE USO %%%%%%%%%%%%%%%%%
