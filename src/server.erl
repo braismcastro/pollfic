@@ -21,9 +21,9 @@
 % Abre el socket, carga la configuración y entra en el bucle.
 init_poll_server() ->
     {ok,Socket}  = gen_udp:open(0, [binary,{active,true}]),
-    DiscoverDir  = dicc:get_conf(discover_dir),
-    DiscoverPort = dicc:get_conf(discover_port),
-    update_polls_port(Socket,DiscoverDir,DiscoverPort),  % Comprobar que ha funcionado o si no volver a intentarlo en bucle
+    DiscoverDir  = dicc:get_conf(balancer_dir),
+    DiscoverPort = dicc:get_conf(balancer_port),
+    update_polls_port(Socket, DiscoverDir, DiscoverPort), % Comprobar que ha funcionado o si no volver a intentarlo en bucle
     poll_server_loop(Socket,DiscoverDir,DiscoverPort).
 
 
@@ -87,15 +87,19 @@ check_polls(_, _, _, _) ->
 % Returns:
 %   - port_changed: El puerto se ha actualizado en Discover correctamente.
 %   - no_answer_from_server: Tras 10mil ms sin respuesta del servidor.
-update_polls_port(Socket, DiscoverDir, DiscoverPort) ->
-    util:send(Socket, DiscoverDir, DiscoverPort, erlang:term_to_binary({renew})),
+update_polls_port(Socket, BalancerDir, BalancerPort) ->
+    util:send(Socket, BalancerDir, BalancerPort, erlang:term_to_binary({renew})),
+        {DiscoverIP,DiscoverPort} = receive
+                            {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
+                                binary_to_term(DiscInf)
+                        end,
+    inet:setopts(Socket, [{active,once}]),
     receive
-        {udp, Socket, _, _, Bin} ->
+        {udp, Socket, DiscoverIP, DiscoverPort, Bin} ->
             erlang:binary_to_term(Bin)
     after 2000 ->
             no_answer_from_server
     end.
-
 
 % Registra una encuesta en el nodo descubrimiento.
 % Params:
@@ -112,8 +116,10 @@ register_in_node(Socket, BalancerIP, BalancerPort, PollName, Description) ->
     {DiscoverIP,DiscoverPort} = receive
                             {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
                                 binary_to_term(DiscInf)
-                        end, 
+                        end,
+    io:format("Discover dir received : ~p",[{DiscoverIP,DiscoverPort}]),
     util:send_file(DiscoverIP, DiscoverPort, ?PUBLIC_KEY_PATH),
+    inet:setopts(Socket, [{active,once}]),
     receive
         {udp, Socket, DiscoverIP, DiscoverPort, Result} ->
             case erlang:binary_to_term(Result) of
@@ -123,8 +129,8 @@ register_in_node(Socket, BalancerIP, BalancerPort, PollName, Description) ->
                 OtherResponse ->
                     OtherResponse
             end
-    after 2000 ->
-        no_answer_from_server
+%    after 200000 ->
+%        no_answer_from_server
     end.
 
 %%%%%%%%%%%%%%%%%% CASOS DE USO %%%%%%%%%%%%%%%%%

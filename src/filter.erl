@@ -5,6 +5,7 @@
 -export([filter/2, clear/1, update_list/2]).
 
 filter(Ip, L) -> 
+	io:format("~p",[L]),
 	case mylist:read(Ip,L) of
 		{ok, N} when N =< ?MAX -> access_allowed;
 		{error, instance} -> access_allowed;

@@ -68,8 +68,6 @@ new_poll(PollName,Description) ->
     ?LOCAL_POLL_SERVER ! {new_poll,self(),PollName,Description},
     receive
         ReturnValue -> ReturnValue
-    after 2000 -> 
-            no_answer_from_server
     end.
 
 % A partir de una tupla que identifique y localice una encuesta, pide al
@@ -127,10 +125,13 @@ get_server_pubkey(Socket,PollName) ->
     BalancerIP = dicc:get_conf(?BALANCER_DIR),
     BalancerPort = dicc:get_conf(?BALANCER_PORT),
     util:send(Socket,BalancerIP,BalancerPort,erlang:term_to_binary({public_key,PollName})),
+    inet:setopts(Socket,[{active,once}]),
+    io:format("print de mierda 1 ~n"),
     {_DiscoverIP,_DiscoverPort} = receive
                                 {udp, Socket, BalancerIP, BalancerPort, Bin} ->
                                     binary_to_term(Bin)
-                                end, 
+                                end,
+    io:format("print de mierda 2 ~n"),
     util:receive_file(PollName ++ "_poll.pub",Socket).
     
 % Permite al cliente cerrar una encuesta activa.
