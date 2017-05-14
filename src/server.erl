@@ -23,7 +23,8 @@ init_poll_server() ->
     {ok,Socket}  = gen_udp:open(0, [binary,{active,true}]),
     DiscoverDir  = dicc:get_conf(balancer_dir),
     DiscoverPort = dicc:get_conf(balancer_port),
-    update_polls_port(Socket, DiscoverDir, DiscoverPort), % Comprobar que ha funcionado o si no volver a intentarlo en bucle
+    update_polls_port(Socket, DiscoverDir, DiscoverPort),
+    io:format("Poll server started on port: ~p ~n",[inet:port(Socket)]),
     poll_server_loop(Socket,DiscoverDir,DiscoverPort).
 
 
@@ -63,7 +64,6 @@ poll_server_loop(Socket, DiscoverDir, DiscoverPort) ->
             From ! register_in_node(Socket, DiscoverDir, DiscoverPort, PollName, Description);
             
         {close_poll,From,PollName} ->
-            % FALTA: BUCLE COMPROBANDO QUE EL DISCOVER LO HA BORRADO.
             util:send(Socket,  DiscoverDir, DiscoverPort, erlang:term_to_binary({delete, PollName})), 
             From ! close_poll(Socket,PollName),
             check_polls(are_polls_alive(), Socket, DiscoverDir, DiscoverPort)
@@ -89,10 +89,11 @@ check_polls(_, _, _, _) ->
 %   - no_answer_from_server: Tras 10mil ms sin respuesta del servidor.
 update_polls_port(Socket, BalancerDir, BalancerPort) ->
     util:send(Socket, BalancerDir, BalancerPort, erlang:term_to_binary({renew})),
-        {DiscoverIP,DiscoverPort} = receive
-                            {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
-                                binary_to_term(DiscInf)
-                        end,
+    {DiscoverIP,DiscoverPort} = 
+    receive
+        {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
+            binary_to_term(DiscInf)
+    end,
     inet:setopts(Socket, [{active,once}]),
     receive
         {udp, Socket, DiscoverIP, DiscoverPort, Bin} ->
@@ -113,11 +114,11 @@ update_polls_port(Socket, BalancerDir, BalancerPort) ->
 %   - no_answer_from_server: Tras 10mil ms sin respuesta del servidor.
 register_in_node(Socket, BalancerIP, BalancerPort, PollName, Description) ->
     util:send(Socket, BalancerIP, BalancerPort, erlang:term_to_binary({register,PollName})),
-    {DiscoverIP,DiscoverPort} = receive
-                            {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
-                                binary_to_term(DiscInf)
-                        end,
-    io:format("Discover dir received : ~p",[{DiscoverIP,DiscoverPort}]),
+    {DiscoverIP,DiscoverPort} = 
+    receive
+        {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
+            binary_to_term(DiscInf)
+    end,
     util:send_file(DiscoverIP, DiscoverPort, ?PUBLIC_KEY_PATH),
     inet:setopts(Socket, [{active,once}]),
     receive
@@ -129,8 +130,8 @@ register_in_node(Socket, BalancerIP, BalancerPort, PollName, Description) ->
                 OtherResponse ->
                     OtherResponse
             end
-%    after 200000 ->
-%        no_answer_from_server
+    after 2000 ->
+        no_answer_from_server
     end.
 
 %%%%%%%%%%%%%%%%%% CASOS DE USO %%%%%%%%%%%%%%%%%
@@ -147,10 +148,11 @@ close_poll(Socket, PollName) ->
     BalancerIP = dicc:get_conf(balancer_dit),
     BalancerPort = dicc:get_conf(balancer_port),
     util:send(Socket, BalancerIP, BalancerPort, erlang:term_to_binary({delete,PollName})),
-    {DiscoverIP,DiscoverPort} = receive
-                                {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
-                                    binary_to_term(DiscInf)     
-                            end, 
+    {DiscoverIP,DiscoverPort} = 
+    receive
+        {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
+            binary_to_term(DiscInf)
+    end, 
     receive 
         {udp, Socket, DiscoverIP, DiscoverPort, Result} ->
             Result = erlang:binary_to_term(Result),
@@ -223,5 +225,6 @@ vote(Who, PollName, Option) ->
             dicc:update(PollName, Option, Votes+1),
             dicc:add(PollName, Who, voted),
             {ok, voted};
-        _ -> {error, alredy_voted}
+        _ -> 
+            {error, alredy_voted}
     end.    

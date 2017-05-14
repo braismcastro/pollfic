@@ -15,12 +15,14 @@
 
 % Debe ejecutarse al inicio siempre. Si hay encuestas activas arranca el
 % "Poll Server".
-init() -> case  server:are_polls_alive()  of
-                true-> 
-                        register(?LOCAL_POLL_SERVER,
-                            spawn(server,init_poll_server,[]));
-                false -> no_polls
-          end.
+init() -> 
+    case  server:are_polls_alive()  of
+        true-> 
+            register(?LOCAL_POLL_SERVER,
+            spawn(server,init_poll_server,[]));
+        false -> 
+            no_polls
+    end.
 
 % Pide al nodo Discover la lista de encuestas activas registradas.
 % Params:
@@ -30,15 +32,19 @@ init() -> case  server:are_polls_alive()  of
 %   - Lista de encuestas activas registradas.
 %   - no_answer_from_server: Si el discover no responde.
 find_polls() ->
-    BalancerIP = dicc:get_conf(?BALANCER_DIR),
+    BalancerIP   = dicc:get_conf(?BALANCER_DIR),
     BalancerPort = dicc:get_conf(?BALANCER_PORT),
     {ok, Socket} = gen_udp:open(0, [binary]),
-    io:format("Client opened socket=~p~n",[Socket]),
     util:send(Socket, BalancerIP, BalancerPort, erlang:term_to_binary(poll_request)),
-    {DiscoverIP,DiscoverPort} = receive
-                                    {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
-                                        binary_to_term(DiscInf)
-                                end, 
+    % Asignación del discover.
+    {DiscoverIP,DiscoverPort} = 
+    receive
+        {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
+            binary_to_term(DiscInf)
+    after 2000 ->
+        no_answer_from_server 
+    end,
+    % Respuesta del discover.
     Value = receive
                 {udp, Socket, DiscoverIP, DiscoverPort, BinValue} ->
                     erlang:binary_to_term(BinValue)
@@ -107,9 +113,9 @@ vote({PollDir,PollPort,PollName},Option)
      orelse 
         Option == negative  ->
     {ok, Socket} = gen_udp:open(0, [binary, {active,false}]),
+    % Se pide la clave pública para enviar el voto a la encuesta.
     get_server_pubkey(Socket,PollName),
     util:send(Socket,PollDir,PollPort,erlang:term_to_binary(vote)),
-    % voto encriptado
     util:send(Socket,PollDir,PollPort,
         encrypt:encrypt_with_pub(term_to_binary({vote,PollName,Option}),?KEYPATH++PollName++".pub")),
     inet:setopts(Socket,[{active,once}]),
@@ -120,18 +126,17 @@ vote({PollDir,PollPort,PollName},Option)
     util:close(Socket),
     Result.
     
-    
+% Se encarga de conseguir la clave pública de una encuesta.
 get_server_pubkey(Socket,PollName) ->
     BalancerIP = dicc:get_conf(?BALANCER_DIR),
     BalancerPort = dicc:get_conf(?BALANCER_PORT),
     util:send(Socket,BalancerIP,BalancerPort,erlang:term_to_binary({public_key,PollName})),
     inet:setopts(Socket,[{active,once}]),
-    io:format("print de mierda 1 ~n"),
-    {_DiscoverIP,_DiscoverPort} = receive
-                                {udp, Socket, BalancerIP, BalancerPort, Bin} ->
-                                    binary_to_term(Bin)
-                                end,
-    io:format("print de mierda 2 ~n"),
+    {_DiscoverIP,_DiscoverPort} = 
+    receive
+        {udp, Socket, BalancerIP, BalancerPort, Bin} ->
+            binary_to_term(Bin)
+    end,
     util:receive_file(PollName ++ "_poll.pub",Socket).
     
 % Permite al cliente cerrar una encuesta activa.
