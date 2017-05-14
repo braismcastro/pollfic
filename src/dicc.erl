@@ -1,6 +1,3 @@
-% Autores:
-%   - David Touriño Calvo
-
 % Modulo diccionario que guarda pares clave valor
 % EL diccionario es almacenado como un fichero con la siguiente estructura:
 % {Clave, Valor}
@@ -22,7 +19,8 @@ get(FileName, Key) ->
     Value = get_aux(File, Key),
     file:close(File),
     Value.
-
+    
+%Devuelve el valor de una tupla del archivo de configuración
 get_conf(Param) -> 
     {ok, File} = file:open(?CONF, [read]),
     {_, Value} = get_aux(File, Param),

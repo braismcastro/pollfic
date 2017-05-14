@@ -1,2 +1,4 @@
 {discover_dir, {127,0,0,1}}.
 {discover_port, 9090}.
+{balancer_dir, {127,0,0,1}}.
+{balancer_port,8080}.	

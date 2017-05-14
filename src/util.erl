@@ -10,7 +10,7 @@
 -module(util).
  
 %% Public API
--export([open/2, close/1, send/4, term_to_str/1, str_to_term/1,send_file/3, save_file/2, receive_file/2 ]).
+-export([open/2, close/1, send/4, term_to_str/1, str_to_term/1,send_file/3, save_file/2, receive_file/2, receive_discover_inf/3]).
 -define(KEYFOLDER, "../keys/").
  
 %%--------------------------------------------------------------------
@@ -49,19 +49,9 @@ close(Socket) ->
 %% @doc Sends a message to the specified ip and port.
 %% @end
 %%--------------------------------------------------------------------
-
 send(Socket, IP, Port, Msg) ->
 	gen_udp:send(Socket, IP, Port, Msg).
 
-term_to_str(Term) -> 
-	io_lib:fwrite("~p.", [Term]).
-
-str_to_term(eof) -> eof;
-str_to_term(Str) -> 
-	{ok,Tokens,_EndLine} = erl_scan:string(Str),
-	{ok,AbsForm} = erl_parse:parse_exprs(Tokens),
-	{value,Value,_Bs} = erl_eval:exprs(AbsForm, erl_eval:new_bindings()),
-	Value.
 	
 % Envía el fichero ubicado en 'Filepath' a la máquina con 'Ip' al puerto 'Port'.
 % La máquina destino debe usar 'file_receiver_loop' para recibir el fichero.
@@ -86,3 +76,25 @@ save_file(Filename,Bs) ->
     {ok, Fd} = file:open(?KEYFOLDER ++ Filename ++ ".pub", write),
     file:write(Fd, Bs),
     file:close(Fd).
+
+%Funcion auxiliar para obtener el ip y puerto del discover asignado
+%Devuelve: 	{DiscoverIP, DiscoverPort}
+receive_discover_inf(Socket, BalancerIP, BalancerPort) ->
+	inet:setopts(Socket, [{active,once}]),
+    receive
+        {udp, Socket, BalancerIP, BalancerPort, DiscInf} ->
+            binary_to_term(DiscInf)
+    after 2000 ->
+        no_answer_from_balancer
+    end.
+
+%%%%%%Funciones auxiliares para conversión de termino erlang a string y viceversa%%%
+term_to_str(Term) -> 
+	io_lib:fwrite("~p.", [Term]).
+
+str_to_term(eof) -> eof;
+str_to_term(Str) -> 
+	{ok,Tokens,_EndLine} = erl_scan:string(Str),
+	{ok,AbsForm} = erl_parse:parse_exprs(Tokens),
+	{value,Value,_Bs} = erl_eval:exprs(AbsForm, erl_eval:new_bindings()),
+	Value.

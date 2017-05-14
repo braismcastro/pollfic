@@ -146,9 +146,11 @@ start() ->
 				master ! {stop, F}
 			end,
 	wxFrame:connect (F, close_window, [{callback, CloseHandler}] ),
+	%%%%%%%%AL CERRAR UNA ENCUESTA%%%%%%%%%%%%%%%%
 	ClosePollHandler = fun () ->
 					Name = wxStaticText:getLabel(PollName),
-					client:close_poll(Name)
+					client:close_poll(Name),
+					RefreshHandler(any,any)
 			end,
 	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%MENU HANDLER%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 	MenuHandler = fun(#wx{id = Id,
