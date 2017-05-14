@@ -11,6 +11,10 @@ En Pollfic los usuarios pueden:
 
 ![Vista fisica](https://raw.github.com/braismcastro/pollfic/master/Doc/Physical_view.png)
 
+## Organización de los archivos de la app
+
+![Estructura archivos](https://raw.github.com/braismcastro/pollfic/master/Doc/Project_files.png)
+
 ## Configuración de la aplicación
 
 Existe un fichero de configuración  de la aplicación llamado [**config**](https://github.com/braismcastro/pollfic/blob/master/config) que se encuentra en la raíz del repositorio. Su contenido es el siguiente:
