@@ -60,3 +60,21 @@ erlc -o `dirname $0`/bin/ `dirname $0`/src/server.erl `dirname $0`/src/discover.
 
 * Antes de ejecutar el programa asegurarse de estar dentro del directorio /bin.
 * Si para una nueva tarea se tuviese que crear un nuevo fichero, sería necesario modificar el script. Añadir el fichero a la línea de compilación (la de "erlc"), de la misma forma que están referenciados el resto de ficheros. 
+
+## Ejemplo de ejecución
+### Arrancar el balancer
+        balancer:start().
+### Arrancar el servidor discover 
+        discover:start().
+### Utilizar el cliente
+* A través de la interfaz gráfica (Puede dar problemas en linux)
+```erlang
+        gui:start().
+````
+* A través de la terminal interactiva de erlang:
+```erlang
+        client:find_polls().
+        client:poll_details({ServerIP, ServerPort, PollName}).
+        client:vote({ServerIP, ServerPort, PollName}, positive).
+        client:new_poll(PollName, Description).
+```
